@@ -2,13 +2,12 @@
 const express = require('express');
 const sql = require('mssql');
 const cors = require('cors');
-const path = require('path'); // Make sure path is required
+const path = require('path');
 
 const app = express();
 app.use(express.json());
 app.use(cors());
 
-// --- THIS IS THE NEW LINE ---
 // Serve static files from the 'public' directory
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -23,18 +22,23 @@ const dbConfig = {
     }
 };
 
-sql.connect(dbConfig).then(pool => {
-    console.log('Connected to Azure SQL Database!');
-    app.locals.db = pool;
-}).catch(err => {
-    console.error('Database Connection Failed! Bad Config: ', err);
-});
+// Keep the connection pool promise to be used in routes
+const dbConnection = sql.connect(dbConfig)
+    .then(pool => {
+        console.log('Connected to Azure SQL Database!');
+        return pool;
+    })
+    .catch(err => {
+        console.error('Database Connection Failed! Bad Config: ', err);
+        process.exit(1); // Exit the process if DB connection fails
+    });
 
-// --- ALL YOUR API ROUTES GO HERE ---
+// --- API ROUTES ---
 // GET all tasks
-app.get('/tasks', async (req, res) => {
+app.get('/api/tasks', async (req, res) => {
     try {
-        const result = await req.app.locals.db.request().query('SELECT * FROM Tasks');
+        const pool = await dbConnection;
+        const result = await pool.request().query('SELECT * FROM Tasks');
         res.json(result.recordset);
     } catch (err) {
         console.error(err);
@@ -43,11 +47,12 @@ app.get('/tasks', async (req, res) => {
 });
 
 // POST a new task
-app.post('/tasks', async (req, res) => {
+app.post('/api/tasks', async (req, res) => {
     const { task, dueDate, remarks, status, priority } = req.body;
     if (!task) return res.status(400).send('Task content cannot be empty');
     try {
-        const result = await req.app.locals.db.request()
+        const pool = await dbConnection;
+        const result = await pool.request()
             .input('taskParam', sql.NVarChar, task)
             .input('dueDateParam', sql.DateTime, dueDate ? new Date(dueDate) : null)
             .input('remarksParam', sql.NVarChar, remarks || null)
@@ -60,12 +65,13 @@ app.post('/tasks', async (req, res) => {
 });
 
 // PUT (update) a task
-app.put('/tasks/:id', async (req, res) => {
+app.put('/api/tasks/:id', async (req, res) => {
     const { id } = req.params;
     const { task, dueDate, remarks, status, priority } = req.body;
     if (!task) return res.status(400).send('Task content cannot be empty');
     try {
-        await req.app.locals.db.request()
+        const pool = await dbConnection;
+        await pool.request()
             .input('idParam', sql.Int, id)
             .input('taskParam', sql.NVarChar, task)
             .input('dueDateParam', sql.DateTime, dueDate ? new Date(dueDate) : null)
@@ -78,16 +84,22 @@ app.put('/tasks/:id', async (req, res) => {
 });
 
 // DELETE a task
-app.delete('/tasks/:id', async (req, res) => {
+app.delete('/api/tasks/:id', async (req, res) => {
     const { id } = req.params;
     try {
-        await req.app.locals.db.request()
+        const pool = await dbConnection;
+        await pool.request()
             .input('idParam', sql.Int, id)
             .query('DELETE FROM Tasks WHERE id = @idParam');
         res.status(200).send({ message: 'Task deleted' });
     } catch (err) { console.error(err); res.status(500).send('Server error'); }
 });
-// --- END OF API ROUTES ---
+
+// --- CATCH-ALL ROUTE for frontend ---
+// This should be the last route
+app.get('*', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
 
 const port = process.env.PORT || 3000;
 app.listen(port, () => {

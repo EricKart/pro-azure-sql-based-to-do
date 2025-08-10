@@ -22,6 +22,14 @@ const dbConfig = {
     }
 };
 
+console.log("--- App is starting with these credentials ---");
+console.log("DB_USER:", process.env.DB_USER);
+console.log("DB_SERVER:", process.env.DB_SERVER);
+console.log("DB_DATABASE:", process.env.DB_DATABASE);
+console.log("DB_PASSWORD length:", process.env.DB_PASSWORD ? process.env.DB_PASSWORD.length : "Not set");
+console.log("-------------------------------------------");
+// --- END OF DEBUGGING BLOCK ---
+
 // Keep the connection pool promise to be used in routes
 const dbConnection = sql.connect(dbConfig)
     .then(pool => {

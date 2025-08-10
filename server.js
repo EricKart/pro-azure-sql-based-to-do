@@ -7,11 +7,12 @@ const app = express();
 app.use(express.json());
 app.use(cors());
 
+// Replace the old dbConfig with this one
 const dbConfig = {
-    user: 'mydbadmin',
-    password: 'myadmin1020@',
-    server: 'sqldbbserver.database.windows.net',
-    database: 'myDB',
+    user: process.env.DB_USER,
+    password: process.env.DB_PASSWORD,
+    server: process.env.DB_SERVER,
+    database: process.env.DB_DATABASE,
     options: {
         encrypt: true,
         trustServerCertificate: false
@@ -107,7 +108,7 @@ app.delete('/tasks/:id', async (req, res) => {
     }
 });
 
-const port = 3000;
+const port = process.env.PORT || 3000;
 app.listen(port, () => {
     console.log(`Server is running on http://localhost:${port}`);
 });

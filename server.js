@@ -2,12 +2,17 @@
 const express = require('express');
 const sql = require('mssql');
 const cors = require('cors');
+const path = require('path'); // <-- Add this line
 
 const app = express();
 app.use(express.json());
 app.use(cors());
 
-// Replace the old dbConfig with this one
+// --- NEW: Serve static files from the 'public' directory ---
+app.use(express.static(path.join(__dirname, 'public')));
+
+
+// --- IMPORTANT: Use Environment Variables for credentials in production ---
 const dbConfig = {
     user: process.env.DB_USER,
     password: process.env.DB_PASSWORD,
@@ -19,11 +24,14 @@ const dbConfig = {
     }
 };
 
+
 sql.connect(dbConfig).then(pool => {
     console.log('Connected to Azure SQL Database!');
 }).catch(err => {
     console.error('Database Connection Failed! Bad Config: ', err);
 });
+
+// --- API Routes ---
 
 // GET all tasks
 app.get('/tasks', async (req, res) => {
@@ -108,7 +116,14 @@ app.delete('/tasks/:id', async (req, res) => {
     }
 });
 
+// --- NEW: Catch-all route to serve the frontend ---
+// This should be the last route
+app.get('*', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+
 const port = process.env.PORT || 3000;
 app.listen(port, () => {
-    console.log(`Server is running on http://localhost:${port}`);
+    console.log(`Server is running on port ${port}`);
 });

@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pro To-Do List | Azure SQL</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            /* New pleasant gradient background */
+            background: linear-gradient(to right top, #a6dabf, #a7f3d0, #a5f3fc, #68a1c0, #c7d2fe);
+        }
+        .text-shadow {
+            text-shadow: 0 2px 4px rgba(0,0,0,0.10);
+        }
+        .status-badge { padding: 2px 10px; border-radius: 9999px; font-size: 0.75rem; font-weight: 600; text-transform: uppercase; }
+        .status-to-do { background-color: #a2d2f2; color: #0c4a6e; }
+        .status-in-process { background-color: #fef9c3; color: #854d0e; }
+        .status-done { background-color: #dcfce7; color: #166534; }
+
+        .priority-high { border-left: 4px solid #ef4444; }
+        .priority-medium { border-left: 4px solid #f97316; }
+        .priority-low { border-left: 4px solid #22c55e; }
+
+        .modal { visibility: hidden; opacity: 0; transition: visibility 0s 0.3s, opacity 0.3s ease; }
+        .modal.is-visible { visibility: visible; opacity: 1; transition: visibility 0s, opacity 0.3s ease; }
+        .modal-container { transform: translateY(20px); opacity: 0; transition: transform 0.3s ease, opacity 0.3s ease; }
+        .modal.is-visible .modal-container { transform: translateY(0); opacity: 1; }
+    </style>
+</head>
+<body class="min-h-screen">
+
+    <div class="container mx-auto max-w-7xl py-8 px-4">
+        <header class="text-center mb-10">
+            <h1 class="text-4xl md:text-5xl font-extrabold text-white text-shadow">Pro To-Do List</h1>
+            <p class="text-indigo-100 mt-2">Powered by Azure SQL</p>
+        </header>
+
+        <!-- Form to add new tasks -->
+        <div class="bg-white/80 backdrop-blur-sm rounded-xl shadow-lg p-6 mb-10 max-w-4xl mx-auto">
+            <h2 class="text-2xl font-bold text-gray-800 mb-4">Create a New Task</h2>
+            <form id="task-form" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div class="md:col-span-2 lg:col-span-3">
+                    <input type="text" id="task-input" placeholder="What's the task?" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 transition" required>
+                </div>
+                <div>
+                    <input type="date" id="due-date-input" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 transition text-gray-500">
+                </div>
+                 <div>
+                    <input type="time" id="due-time-input" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 transition text-gray-500">
+                </div>
+                <div>
+                     <select id="priority-input" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 transition bg-white">
+                        <option>Medium</option>
+                        <option>High</option>
+                        <option>Low</option>
+                    </select>
+                </div>
+                <div class="md:col-span-2 lg:col-span-3">
+                    <textarea id="remarks-input" placeholder="Add some notes..." rows="3" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 transition"></textarea>
+                </div>
+                <div class="md:col-span-2 lg:col-span-3 text-right">
+                    <button type="submit" class="bg-indigo-600 text-white font-semibold px-8 py-3 rounded-lg hover:bg-indigo-700 transition shadow-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">Add Task</button>
+                </div>
+            </form>
+        </div>
+
+        <!-- Filter and Sort Controls -->
+        <div class="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
+            <div class="flex gap-2 p-1 bg-white/70 backdrop-blur-sm rounded-lg shadow">
+                <button data-filter="All" class="filter-btn active-filter font-semibold px-4 py-2 rounded-md text-sm text-gray-700 hover:bg-indigo-100">All</button>
+                <button data-filter="To Do" class="filter-btn font-semibold px-4 py-2 rounded-md text-sm text-gray-700 hover:bg-indigo-100">To Do</button>
+                <button data-filter="In Process" class="filter-btn font-semibold px-4 py-2 rounded-md text-sm text-gray-700 hover:bg-indigo-100">In Process</button>
+                <button data-filter="Done" class="filter-btn font-semibold px-4 py-2 rounded-md text-sm text-gray-700 hover:bg-indigo-100">Done</button>
+            </div>
+             <select id="sort-select" class="p-2 border border-gray-300 rounded-lg bg-white/70 backdrop-blur-sm shadow text-gray-700">
+                <option value="createdAt_desc">Sort by Newest</option>
+                <option value="createdAt_asc">Sort by Oldest</option>
+                <option value="dueDate_asc">Sort by Due Date</option>
+            </select>
+        </div>
+
+        <!-- Task List -->
+        <div id="task-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"></div>
+        <p id="loading-state" class="text-center text-white font-semibold mt-8 text-lg">Loading tasks...</p>
+    </div>
+
+    <!-- Modals (Edit and Delete) -->
+    <div id="edit-modal" class="modal fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4">
+        <div class="modal-container bg-white rounded-xl shadow-2xl w-full max-w-lg p-6">
+             <form id="edit-task-form">
+                <input type="hidden" id="edit-task-id">
+                <div class="space-y-4">
+                    <input type="text" id="edit-task-input" class="w-full text-xl font-bold p-2 border-b-2 border-gray-300 focus:border-indigo-500 outline-none bg-transparent" required>
+                    <div class="grid grid-cols-2 gap-4">
+                        <input type="date" id="edit-due-date-input" class="w-full p-2 border border-gray-300 rounded-lg">
+                        <input type="time" id="edit-due-time-input" class="w-full p-2 border border-gray-300 rounded-lg">
+                        <select id="edit-status-input" class="w-full p-2 border border-gray-300 rounded-lg"><option>To Do</option><option>In Process</option><option>Done</option></select>
+                        <select id="edit-priority-input" class="w-full p-2 border border-gray-300 rounded-lg"><option>High</option><option>Medium</option><option>Low</option></select>
+                    </div>
+                    <textarea id="edit-remarks-input" rows="4" class="w-full p-2 border border-gray-300 rounded-lg"></textarea>
+                    <div class="flex justify-end gap-3 pt-2">
+                        <button type="button" data-close-modal class="bg-gray-200 text-gray-800 font-semibold px-6 py-2 rounded-lg hover:bg-gray-300">Cancel</button>
+                        <button type="submit" class="bg-indigo-600 text-white font-semibold px-6 py-2 rounded-lg">Save Changes</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+    <div id="delete-modal" class="modal fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4">
+        <div class="modal-container bg-white rounded-xl shadow-2xl w-full max-w-md p-6 text-center">
+             <h2 class="text-2xl font-bold text-gray-800 mb-2">Delete Task?</h2>
+            <p class="text-gray-600 mb-6">This action cannot be undone.</p>
+            <div class="flex justify-center gap-4">
+                <button id="cancel-delete-btn" class="bg-gray-200 text-gray-800 font-semibold px-8 py-2 rounded-lg hover:bg-gray-300">Cancel</button>
+                <button id="confirm-delete-btn" class="bg-red-600 text-white font-semibold px-8 py-2 rounded-lg hover:bg-red-700">Delete</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = 'http://localhost:3000';
+        let allTasks = [], currentFilter = 'All', currentSort = 'createdAt_desc';
+        
+        // DOM Elements
+        const taskForm = document.getElementById('task-form');
+        const taskList = document.getElementById('task-list');
+        const loadingState = document.getElementById('loading-state');
+        const editModalEl = document.getElementById('edit-modal');
+        const deleteModalEl = document.getElementById('delete-modal');
+        const editTaskForm = document.getElementById('edit-task-form');
+        let taskToDeleteId = null;
+
+        // Helpers
+        const getStatusClass = (status) => ({'In Process': 'status-in-process', 'Done': 'status-done'}[status] || 'status-to-do');
+        const getPriorityClass = (priority) => ({'High': 'priority-high', 'Low': 'priority-low'}[priority] || 'priority-medium');
+
+        // Render Logic
+        function renderTasks() {
+            let tasksToRender = [...allTasks];
+            if (currentFilter !== 'All') {
+                tasksToRender = tasksToRender.filter(t => t.status === currentFilter);
+            }
+
+            tasksToRender.sort((a, b) => {
+                switch(currentSort) {
+                    case 'dueDate_asc': return (new Date(a.dueDate) || Infinity) - (new Date(b.dueDate) || Infinity);
+                    case 'createdAt_asc': return new Date(a.createdAt) - new Date(b.createdAt);
+                    case 'createdAt_desc':
+                    default: return new Date(b.createdAt) - new Date(a.createdAt);
+                }
+            });
+
+            taskList.innerHTML = '';
+            loadingState.textContent = tasksToRender.length === 0 ? `No tasks with status "${currentFilter}"` : '';
+            
+            tasksToRender.forEach(task => {
+                const card = document.createElement('div');
+                card.className = `task-card bg-white rounded-xl shadow-lg p-5 flex flex-col justify-between transition-all duration-300 ${getPriorityClass(task.priority)}`;
+                card.dataset.id = task.id;
+
+                const dueDate = task.dueDate ? new Date(task.dueDate) : null;
+                const displayDate = dueDate ? dueDate.toLocaleDateString(undefined, { day: 'numeric', month: 'long' }) : 'No due date';
+                const displayTime = dueDate ? dueDate.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' }) : '';
+
+                card.innerHTML = `
+                    <div>
+                        <div class="flex justify-between items-start mb-2 gap-2">
+                            <h3 class="task-text font-bold text-lg text-gray-800 pr-2">${task.task}</h3>
+                            <span class="status-badge ${getStatusClass(task.status)} flex-shrink-0">${task.status}</span>
+                        </div>
+                        <div class="text-sm text-gray-500 mb-3">
+                            <span>${displayDate}</span>
+                            ${displayTime ? `<span class="mx-1">&middot;</span><span>${displayTime}</span>` : ''}
+                        </div>
+                        <p class="remarks-text text-sm text-gray-700 bg-gray-50 p-3 rounded-md whitespace-pre-wrap min-h-[40px]">${task.remarks || ''}</p>
+                    </div>
+                    <div class="flex justify-end gap-2 mt-4">
+                        <button class="edit-btn p-2 text-gray-500 hover:text-indigo-600 rounded-full hover:bg-gray-100"><svg class="h-5 w-5 pointer-events-none" fill="currentColor" viewBox="0 0 20 20"><path d="M17.414 2.586a2 2 0 00-2.828 0L7 10.172V13h2.828l7.586-7.586a2 2 0 000-2.828z" /><path fill-rule="evenodd" d="M2 6a2 2 0 012-2h4a1 1 0 010 2H4v10h10v-4a1 1 0 112 0v4a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" clip-rule="evenodd" /></svg></button>
+                        <button class="delete-btn p-2 text-gray-500 hover:text-red-600 rounded-full hover:bg-gray-100"><svg class="h-5 w-5 pointer-events-none" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd" /></svg></button>
+                    </div>
+                `;
+                taskList.appendChild(card);
+            });
+        }
+
+        // API Calls
+        async function fetchTasks() {
+            try {
+                const response = await fetch(`${API_URL}/tasks`);
+                allTasks = await response.json();
+                renderTasks();
+            } catch (error) { console.error('Failed to fetch tasks:', error); loadingState.textContent = 'Error connecting to the server.'; }
+        }
+
+        async function apiCall(endpoint, method, body) {
+            try {
+                const response = await fetch(`${API_URL}/${endpoint}`, {
+                    method,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                });
+                if (!response.ok) throw new Error('API request failed');
+                fetchTasks();
+                return true;
+            } catch (error) {
+                console.error(`Failed to ${method} task:`, error);
+                return false;
+            }
+        }
+
+        // Event Handlers
+        taskForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const date = document.getElementById('due-date-input').value;
+            const time = document.getElementById('due-time-input').value;
+            const dueDate = date && time ? `${date}T${time}` : (date ? date : null);
+
+            apiCall('tasks', 'POST', {
+                task: document.getElementById('task-input').value,
+                dueDate,
+                remarks: document.getElementById('remarks-input').value,
+                status: 'To Do',
+                priority: document.getElementById('priority-input').value,
+            }).then(() => taskForm.reset());
+        });
+
+        taskList.addEventListener('click', (e) => {
+            const card = e.target.closest('.task-card');
+            if (!card) return;
+            const taskId = card.dataset.id;
+            if (e.target.closest('.delete-btn')) openDeleteModal(taskId);
+            if (e.target.closest('.edit-btn')) openEditModal(taskId);
+        });
+
+        editTaskForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const id = document.getElementById('edit-task-id').value;
+            const date = document.getElementById('edit-due-date-input').value;
+            const time = document.getElementById('edit-due-time-input').value;
+            const dueDate = date && time ? `${date}T${time}` : (date ? date : null);
+
+            apiCall(`tasks/${id}`, 'PUT', {
+                task: document.getElementById('edit-task-input').value,
+                dueDate,
+                status: document.getElementById('edit-status-input').value,
+                priority: document.getElementById('edit-priority-input').value,
+                remarks: document.getElementById('edit-remarks-input').value,
+            }).then(success => success && closeModal(editModalEl));
+        });
+
+        document.getElementById('confirm-delete-btn').addEventListener('click', () => {
+             apiCall(`tasks/${taskToDeleteId}`, 'DELETE').then(success => {
+                if (success) {
+                    closeModal(deleteModalEl);
+                    taskToDeleteId = null;
+                }
+             });
+        });
+
+        document.querySelectorAll('.filter-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const currentActive = document.querySelector('.filter-btn.active-filter');
+                if(currentActive) currentActive.classList.remove('active-filter', 'bg-indigo-500', 'text-white');
+                e.target.classList.add('active-filter', 'bg-indigo-500', 'text-white');
+                currentFilter = e.target.dataset.filter;
+                renderTasks();
+            });
+        });
+        document.getElementById('sort-select').addEventListener('change', (e) => {
+            currentSort = e.target.value;
+            renderTasks();
+});
+
+        // Modal Logic
+        const openModal = (modalEl) => modalEl.classList.add('is-visible');
+        const closeModal = (modalEl) => modalEl.classList.remove('is-visible');
+        
+        function openEditModal(taskId) {
+            const task = allTasks.find(t => t.id == taskId);
+            if (!task) return;
+            const dueDate = task.dueDate ? new Date(task.dueDate) : null;
+            
+            document.getElementById('edit-task-id').value = task.id;
+            document.getElementById('edit-task-input').value = task.task;
+            document.getElementById('edit-due-date-input').value = dueDate ? dueDate.toISOString().split('T')[0] : '';
+            document.getElementById('edit-due-time-input').value = dueDate ? dueDate.toTimeString().split(' ')[0].substring(0,5) : '';
+            document.getElementById('edit-status-input').value = task.status;
+            document.getElementById('edit-priority-input').value = task.priority;
+            document.getElementById('edit-remarks-input').value = task.remarks || '';
+            openModal(editModalEl);
+        }
+
+        function openDeleteModal(taskId) {
+            taskToDeleteId = taskId;
+            openModal(deleteModalEl);
+        }
+
+        document.querySelectorAll('[data-close-modal]').forEach(btn => btn.addEventListener('click', () => closeModal(editModalEl)));
+        document.getElementById('cancel-delete-btn').addEventListener('click', () => closeModal(deleteModalEl));
+
+        // Initial Load
+        fetchTasks();
+    </script>
+</body>
+</html>
